@@ -1,12 +1,12 @@
 #Kymang
 
-from pyrogram import filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from hydrogram import filters
+from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Kymang import bot
-from Kymang.config import *
-from Kymang.modules.data import *
-from Kymang.modules.func import *
+from Kymang.config import BOT_ID
+from Kymang.modules.data import admin_info, cek_owner
+from Kymang.modules.func import encode, get_message_id
 
 
 @bot.on_message(filters.private & filters.command("batch"))
@@ -59,7 +59,7 @@ async def batch(c, m):
         continue
 
     string = f"get-{f_msg_id * abs(chg)}-{s_msg_id * abs(chg)}"
-    base64_string = await encode(string)
+    base64_string = encode(string)
     link = f"https://t.me/{c.me.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup(
         [
@@ -107,7 +107,7 @@ async def link_generator(c, m):
         )
         continue
 
-    base64_string = await encode(f"get-{msg_id * abs(chg)}")
+    base64_string = encode(f"get-{msg_id * abs(chg)}")
     link = f"https://t.me/{c.me.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup(
         [

@@ -1,30 +1,22 @@
 #Kymang
 
 
-from pyrogram.types import InlineKeyboardButton
+from hydrogram.types import InlineKeyboardButton
 
-from Kymang.modules.data import *
+from Kymang.modules.data import get_subs
 
 
 async def button_pas_pertama(c):
-    temp = []
     links = []
-    new_keyboard = []
     for x in await get_subs(c.me.id):
         info = await c.get_chat(x["sub"])
         try:
             link = info.invite_link
-        except:
+        except Exception:
             link = await c.export_chat_invite_link(x["sub"])
         links.append(link)
     keyboard = [InlineKeyboardButton("Channel", url=h) for h in links]
-    for i, board in enumerate(keyboard, start=1):
-        temp.append(board)
-        if i % 2 == 0:
-            new_keyboard.append(temp)
-            temp = []
-        if i == len(keyboard):
-            new_keyboard.append(temp)
+    new_keyboard = [keyboard[i:i+2] for i in range(0, len(keyboard), 2)]
     try:
         new_keyboard.append(
             [  
@@ -43,8 +35,6 @@ async def button_pas_pertama(c):
 
 
 async def force_button(c, m):
-    temp = []
-    new_keyboard = []
     links = []
     subs = await get_subs(c.me.id)
     if subs is None:
@@ -53,17 +43,11 @@ async def force_button(c, m):
         info = await c.get_chat(x["sub"])
         try:
             link = info.invite_link
-        except:
+        except Exception:
             link = await c.export_chat_invite_link(x["sub"])
         links.append(link)
     keyboard = [InlineKeyboardButton("Join Dulu", url=h) for h in links]
-    for i, board in enumerate(keyboard, start=1):
-        temp.append(board)
-        if i % 2 == 0:
-            new_keyboard.append(temp)
-            temp = []
-        if i == len(keyboard):
-            new_keyboard.append(temp)
+    new_keyboard = [keyboard[i:i+2] for i in range(0, len(keyboard), 2)]
     try:
         new_keyboard.append(
             [

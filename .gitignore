@@ -1,0 +1,28 @@
+# Environment & Credentials
+.env
+anuan.env
+env.txt
+*.key
+*.pem
+
+# Telegram Session Files
+*.session
+*.session*
+*.session-journal
+*.session-shm
+*.session-wal
+
+# Python Cache & Build
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+.pytest_cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

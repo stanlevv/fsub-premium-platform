@@ -1,46 +1,78 @@
-#Kymang anak tolol
+#Kymang
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from Kymang.config import MONGO_URL
+from Kymang.modules.crypto import decrypt_token, encrypt_token
 
-mongo_client = AsyncIOMotorClient(MONGO_URL)
+# ─── Singleton Global Connection Pool ─────────────────────────────────────────
+# ponytail: satu client global, dibagi semua sub-bot.
+# Motor deprecated per Mei 2025; migrasi ke pymongo.AsyncMongoClient di Fase 5.
+mongo_client = AsyncIOMotorClient(
+    MONGO_URL,
+    maxPoolSize=50,
+    minPoolSize=5,
+    serverSelectionTimeoutMS=5000,
+    maxIdleTimeMS=30000,
+)
 mongodb = mongo_client.premiumsub
 
-
-botdb = mongodb.fsubprem
-ownerdb = mongodb.owner
-subdb = mongodb.sub
-broaddb = mongodb.broad
-premdb = mongodb.premium
-aktifdb = mongodb.aktif
-admindb = mongodb.admin
-sellerdb = mongodb.seller
+botdb     = mongodb.fsubprem
+ownerdb   = mongodb.owner
+subdb     = mongodb.sub
+broaddb   = mongodb.broad
+premdb    = mongodb.premium
+aktifdb   = mongodb.aktif
+admindb   = mongodb.admin
+sellerdb  = mongodb.seller
 protectdb = mongodb.protect
-maxsubdb = mongodb.max
+maxsubdb  = mongodb.max
+
+
+async def ensure_indexes():
+    """Auto-create indexes saat startup. Idempotent — aman dipanggil berulang."""
+    try:
+        await botdb.create_index([("user_id", 1)], unique=True, background=True)
+        await aktifdb.create_index([("time", 1)], background=True)
+    except Exception as e:
+        import logging
+        logging.getLogger("MongoDB").warning(f"⚠️ Gagal membuat index MongoDB (Cek MONGO_URL): {e}")
+
 
 
 # bot
 async def get_bot():
     data = []
-    async for bt in botdb.find({"user_id": {"$exists": 1}}):
-        data.append(
-            dict(
-                name=str(bt["user_id"]),
-                api_id=bt["api_id"],
-                api_hash=bt["api_hash"],
-                bot_token=bt["bot_token"],
+    try:
+        async for bt in botdb.find({"user_id": {"$exists": 1}}):
+            raw_token = bt.get("bot_token_encrypted") or bt.get("bot_token", "")
+            token = raw_token
+            if raw_token:
+                try:
+                    token = decrypt_token(raw_token)
+                except Exception:
+                    token = raw_token
+            data.append(
+                dict(
+                    name=str(bt["user_id"]),
+                    api_id=bt["api_id"],
+                    api_hash=bt["api_hash"],
+                    bot_token=token,
+                )
             )
-        )
+    except Exception as e:
+        import logging
+        logging.getLogger("MongoDB").warning(f"⚠️ Gagal mengambil sub-bot dari MongoDB: {e}")
     return data
 
 
 async def add_bot(user_id, api_id, api_hash, token):
+    encrypted = encrypt_token(token)
     cek = await botdb.find_one({"user_id": user_id})
     if cek:
         await botdb.update_one(
             {"user_id": user_id},
-            {"$set": {"api_id": api_id, "api_hash": api_hash, "bot_token": token}},
+            {"$set": {"api_id": api_id, "api_hash": api_hash, "bot_token_encrypted": encrypted, "bot_token": encrypted}},
         )
     else:
         await botdb.insert_one(
@@ -48,7 +80,8 @@ async def add_bot(user_id, api_id, api_hash, token):
                 "user_id": user_id,
                 "api_id": api_id,
                 "api_hash": api_hash,
-                "bot_token": token,
+                "bot_token_encrypted": encrypted,
+                "bot_token": encrypted,
             }
         )
 
@@ -59,82 +92,113 @@ async def remove_bot(user_id):
 
 # owner
 async def cek_owner(user_id):
-    if r := [jo async for jo in ownerdb.find({"user_id": user_id})]:
-        return r
-    else:
-        return False
+    try:
+        if r := [jo async for jo in ownerdb.find({"user_id": user_id})]:
+            return r
+    except Exception:
+        pass
+    return False
 
 
-async def add_owner(user_id, owner, channel):
-    ssize = await ownerdb.find_one({"user_id": user_id})
-    if ssize:
-        await ownerdb.update_one(
-            {"user_id": user_id},
-            {"$set": {"owner": owner, "channel": channel}},
-        )
-    else:
-        await ownerdb.insert_one(
-            {
-                "user_id": user_id,
-                "owner": owner,
-                "channel": channel,
-            }
-        )
+async def add_owner(user_id, owner, channel, backup_channel=None):
+    try:
+        ssize = await ownerdb.find_one({"user_id": user_id})
+        update_data = {"owner": owner, "channel": channel}
+        if backup_channel:
+            update_data["backup_channel"] = backup_channel
+        if ssize:
+            await ownerdb.update_one(
+                {"user_id": user_id},
+                {"$set": update_data},
+            )
+        else:
+            await ownerdb.insert_one(
+                {
+                    "user_id": user_id,
+                    "owner": owner,
+                    "channel": channel,
+                    "backup_channel": backup_channel,
+                }
+            )
+    except Exception:
+        pass
 
 
 async def del_owner(user_id):
-    await ownerdb.delete_one({"user_id": user_id})
+    try:
+        await ownerdb.delete_one({"user_id": user_id})
+    except Exception:
+        pass
 
 
 # sub
 async def add_sub(user_id, sub):
-    subs = await subdb.find_one({"user_id": user_id, "sub": sub})
-    if subs:
-        await subdb.update_one(
-            {"user_id": user_id},
-            {"$set": {"sub": sub}},
-        )
-    else:
-        await subdb.insert_one({"user_id": user_id, "sub": sub})
+    try:
+        subs = await subdb.find_one({"user_id": user_id, "sub": sub})
+        if subs:
+            await subdb.update_one(
+                {"user_id": user_id},
+                {"$set": {"sub": sub}},
+            )
+        else:
+            await subdb.insert_one({"user_id": user_id, "sub": sub})
+    except Exception:
+        pass
 
 
 async def get_subs(user_id):
-    if r := [jo async for jo in subdb.find({"user_id": user_id})]:
-        return r
-    else:
-        return None
+    try:
+        if r := [jo async for jo in subdb.find({"user_id": user_id})]:
+            return r
+    except Exception:
+        pass
+    return None
 
 
 async def sub_info(user_id, sub):
-    subs = await subdb.find_one({"user_id": user_id, "sub": sub})
-    return None if not subs else subs["sub"]
+    try:
+        subs = await subdb.find_one({"user_id": user_id, "sub": sub})
+        return None if not subs else subs["sub"]
+    except Exception:
+        return None
 
 
 async def del_sub(user_id, sub):
-    await subdb.delete_one({"user_id": user_id, "sub": sub})
+    try:
+        await subdb.delete_one({"user_id": user_id, "sub": sub})
+    except Exception:
+        pass
 
 
 # broad
 async def add_user(user_id, user):
-    ssize = await broaddb.find_one({"user_id": user_id, "user": user})
-    if ssize:
-        await broaddb.update_one(
-            {"user_id": user_id},
-            {"$set": {"user": user}},
-        )
-    else:
-        await broaddb.insert_one({"user_id": user_id, "user": user})
+    try:
+        ssize = await broaddb.find_one({"user_id": user_id, "user": user})
+        if ssize:
+            await broaddb.update_one(
+                {"user_id": user_id},
+                {"$set": {"user": user}},
+            )
+        else:
+            await broaddb.insert_one({"user_id": user_id, "user": user})
+    except Exception:
+        pass
 
 
 async def get_user(user_id):
-    if r := [jo async for jo in broaddb.find({"user_id": user_id})]:
-        return r
-    else:
-        return False
+    try:
+        if r := [jo async for jo in broaddb.find({"user_id": user_id})]:
+            return r
+    except Exception:
+        pass
+    return False
 
 
 async def del_user(user_id, user):
-    await broaddb.delete_one({"user_id": user_id, "user": user})
+    try:
+        await broaddb.delete_one({"user_id": user_id, "user": user})
+    except Exception:
+        pass
 
 
 # aktif

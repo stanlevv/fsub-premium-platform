@@ -1,7 +1,21 @@
-python-dotenv
-git+https://github.com/KurimuzonAkuma/pyrogram@dev
-TgCrypto
-motor
-pyromod
-pykeyboard
-sqlalchemy==1.3.23
+# ─── Core Bot Framework ───────────────────────────
+hydrogram>=0.2.0          # Pengganti Pyrogram (aktif dikembangkan komunitas)
+                          # pyromod sudah built-in di Hydrogram >= 0.2.0
+# TgCrypto                  # Opsional: C-extension (membutuhkan C++ Build Tools di Windows)
+
+# ─── Database ─────────────────────────────────────
+motor                     # MongoDB Async driver
+
+# ─── Security & Cryptography (PRD v5.0 Modul 3) ──
+cryptography              # AES-256-GCM untuk enkripsi token klien di DB
+
+# ─── Caching (PRD v5.0 Modul 5) ──────────────────
+cachetools                # In-Memory TTL Cache untuk FSub & config bot
+# asyncache dihapus — diganti dengan asyncio.Lock native (lebih ringan)
+
+# ─── Environment & Config ─────────────────────────
+python-dotenv             # Load variabel dari file .env
+
+# ─── UI / Keyboard ────────────────────────────────
+# pykeyboard dihapus — hydrogram.types.InlineKeyboardMarkup sudah cukup (YAGNI)
+

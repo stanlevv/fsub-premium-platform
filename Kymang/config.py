@@ -4,16 +4,37 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv(".env")
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+load_dotenv(env_path, override=True)
+load_dotenv(".env", override=True)
 
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "6938657094:AAEy6kRa3CVRJEfv_NyHFeD4foOv_m6FbwI")
-API_ID = int(os.environ.get("API_ID", "17131033"))
-API_HASH = os.environ.get("API_HASH", "7768488c115ac09684bb38e608c47997")
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://stanlev:stanlev@cluster0.kiciq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-ADMINS = [int(x) for x in (os.environ.get("ADMINS", "1734774709").split())]
-MEMBER = [int(x) for x in (os.environ.get("MEMBER", "160").split())]
-LOG_GRP = int(os.environ.get("LOG_GRP", "-1002061778178"))
-BOT_ID = int(os.environ.get("BOT_ID", "6938657094"))
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+API_ID_ENV = os.environ.get("API_ID")
+API_HASH = os.environ.get("API_HASH")
+MONGO_URL = os.environ.get("MONGO_URL")
+ADMINS_ENV = os.environ.get("ADMINS")
+LOG_GRP_ENV = os.environ.get("LOG_GRP")
 
-KITA = [int(x) for x in (os.environ.get("KITA", "1668766845").split())]
+if not BOT_TOKEN:
+    raise EnvironmentError("BOT_TOKEN wajib diisi di file .env")
+if not API_ID_ENV:
+    raise EnvironmentError("API_ID wajib diisi di file .env")
+if not API_HASH:
+    raise EnvironmentError("API_HASH wajib diisi di file .env")
+if not MONGO_URL:
+    raise EnvironmentError("MONGO_URL wajib diisi di file .env")
+if not ADMINS_ENV:
+    raise EnvironmentError("ADMINS wajib diisi di file .env")
+if not LOG_GRP_ENV:
+    raise EnvironmentError("LOG_GRP wajib diisi di file .env")
+
+API_ID = int(API_ID_ENV)
+ADMINS = [int(x) for x in ADMINS_ENV.replace(",", " ").split()]
+LOG_GRP = int(LOG_GRP_ENV)
+BOT_ID = int(os.environ.get("BOT_ID", BOT_TOKEN.split(":")[0]))
+
+MEMBER = [int(x) for x in os.environ.get("MEMBER", "").replace(",", " ").split()] if os.environ.get("MEMBER") else []
+KITA = [int(x) for x in os.environ.get("KITA", "").replace(",", " ").split()] if os.environ.get("KITA") else []
+MASTER_CRYPTO_KEY = os.environ.get("MASTER_CRYPTO_KEY", BOT_TOKEN)
+

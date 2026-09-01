@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  fsub-bot:
+    build: .
+    container_name: fsub_bot_engine
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      # Mount volume permanen agar session files tidak hilang saat restart
+      - .:/app
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

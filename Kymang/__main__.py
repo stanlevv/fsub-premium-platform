@@ -1,39 +1,32 @@
-#Kymang
-
-import importlib
-from sys import version as pyver
+# Kymang Engine Main Entry Point
 
 import asyncio
-import os
-import sys
+import importlib
+import logging
+from sys import version as pyver
 
-from atexit import register
+from hydrogram import __version__ as hydrover
+from hydrogram import idle
+from hydrogram.errors import RPCError
 
-from pyrogram import __version__ as pyrover
-from pyrogram import idle
-from pyrogram.errors import RPCError
-from pyrogram.types import BotCommand
-
-from Kymang import LOOP, Bot, bot, LOGGER
+from Kymang import Bot, bot
 from Kymang.config import LOG_GRP
 from Kymang.modules import loadModule
-from Kymang.modules.data import get_bot, remove_bot
-from Kymang.modules.plernya import *
+from Kymang.modules.cek_expired import init_expiration_notifier
+from Kymang.modules.data import ensure_indexes, get_bot, remove_bot
+from Kymang.modules.monitor import init_health_monitor
 
 msg = """
 **Berhasil Di Aktifkan**
 **Python Version** `{}`
-**Pyrogram Version** `{}`
+**Hydrogram Version** `{}`
 """
 
-#async def auto_restart():
-   # while not await asyncio.sleep(43200):
-     #   def _():
-         #   os.system(f"kill -9 {os.getpid()} && python3 -m Kymang")
-       # register(_)
-       # sys.exit(0)
 
 async def main():
+    await ensure_indexes()
+    init_health_monitor()
+    init_expiration_notifier()
     await bot.start()
     
     for bt in await get_bot():
@@ -43,16 +36,19 @@ async def main():
             print(f"{b.me.first_name} [Berhasil Diaktifkan]")
         except RPCError:
             await remove_bot(bt["name"])
-            LOGGER("Info").info(f"✅ {bt['name']} Berhasil Dihapus Dari Database")
+            logging.getLogger("Info").info(f"✅ {bt['name']} Berhasil Dihapus Dari Database")
+    
     for mod in loadModule():
-            importlib.reload(importlib.import_module(f"Kymang.modules.{mod}"))
-    LOGGER("Info").info(f"[🤖 @{bot.me.first_name} 🤖] [🔥 BERHASIL DIAKTIFKAN! 🔥]")
-    await bot.send_message(LOG_GRP, msg.format(pyver.split()[0], pyrover))
-    await plernya()
-    #await auto_restart()
+        importlib.reload(importlib.import_module(f"Kymang.modules.{mod}"))
+    
+    try:
+        await bot.send_message(chat_id=LOG_GRP, text=msg.format(pyver.split()[0], hydrover))
+    except Exception as e:
+        logging.getLogger("Info").warning(f"⚠️ Gagal mengirim pesan log startup ke LOG_GRP ({LOG_GRP}): {e}")
     await idle()
 
 
 if __name__ == "__main__":
-    LOGGER("Info").info("JIKA BUTUH BANTUAN SILAHKAN HUBUNGI @OneWatchBokep")
-    LOOP.run_until_complete(main())
+    logging.getLogger("Info").info("JIKA BUTUH BANTUAN SILAHKAN HUBUNGI @OneWatchBokep")
+    asyncio.run(main())
+

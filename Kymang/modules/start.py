@@ -5,28 +5,31 @@ from io import BytesIO
 import subprocess
 import os
 import sys
-from datetime import datetime, timedelta
-from distutils.util import strtobool
+from datetime import datetime, timedelta, timezone
 from time import time
 
-from pykeyboard import InlineKeyboard
-from pyrogram import filters
-from pyrogram.enums import ParseMode
-from pyrogram.errors import FloodWait
-from pyrogram.types import *
 
-from Kymang import Bot, bot
-from Kymang.config import *
-from Kymang.modules.btn import *
-from Kymang.modules.data import *
-from Kymang.modules.func import *
+from hydrogram import filters
+from hydrogram.enums import ParseMode
+from hydrogram.errors import FloodWait
+from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+
+from Kymang import bot
+from Kymang.config import ADMINS, BOT_ID, KITA, MEMBER
+from Kymang.modules.btn import button_pas_pertama, force_button
+from Kymang.modules.data import (
+    add_max, add_owner, add_timer, add_user, admin_info, cek_owner, cek_prem,
+    cek_seller, del_owner, del_timer, remove_bot, seller_info, timer_info
+)
+from Kymang.modules.func import decode, decode_payload, encode, get_messages, subcribe
+from Kymang.modules.auto_del import add_auto_delete, init_auto_delete_sweeper
 
 
 def restart():
     os.execvp(sys.executable, [sys.executable, "-m", "Kymang"])
 
 
-START_TIME = datetime.utcnow()
+START_TIME = datetime.now(timezone.utc)
 START_TIME_ISO = START_TIME.replace(microsecond=0).isoformat()
 TIME_DURATION_UNITS = (
     ("week", 60 * 60 * 24 * 7),
@@ -98,15 +101,20 @@ async def start_bot(c, m):
         )
         return
     av = await timer_info(c.me.id)
-    time = datetime.now().strftime("%d-%m-%Y")
-    if av == time:
+    time_str = datetime.now().strftime("%d-%m-%Y")
+    if av == time_str:
         print(f"@{c.me.username} Telah habis Mohon Tunggu Sedang Restart Bot")
         await remove_bot(str(c.me.id))
         await del_timer(c.me.id)
         os.popen(f"rm {c.me.id}*")
         await restart()
-    kk = await protect_info(c.me.id)
-    kon = strtobool(kk)
+    
+    # Jalankan background sweeper auto-delete jika belum berjalan
+    init_auto_delete_sweeper(c)
+
+    # DRM Native: protect_content=True default ON
+    protect_on = True
+
     await add_user(c.me.id, m.from_user.id)
     for ix in await cek_owner(c.me.id):
         chg = ix["channel"]
@@ -116,8 +124,13 @@ async def start_bot(c, m):
             base64_string = text.split(" ", 1)[1]
         except Exception:
             return
-        string = await decode(base64_string)
+        # Dual-Mode Decoder (HMAC sec_ & Base64 legacy)
+        try:
+            string = decode_payload(base64_string, c.bot_token)
+        except Exception:
+            string = decode(base64_string)
         argument = string.split("-")
+        sent_ids = []
         if len(argument) == 3:
             try:
                 start = int(int(argument[1]) / abs(chg))
@@ -144,22 +157,26 @@ async def start_bot(c, m):
             for msg in mes:
                 caption = msg.caption.html if msg.caption else ""
                 try:
-                    await msg.copy(
+                    s_msg = await msg.copy(
                         m.chat.id,
                         caption=caption,
                         parse_mode=ParseMode.HTML,
-                        protect_content=kon,
+                        protect_content=protect_on,
                         reply_markup=None,
                     )
+                    if s_msg:
+                        sent_ids.append(s_msg.id)
                 except FloodWait as e:
-                    await asyncio.sleep(e.x)
-                    await msg.copy(
+                    await asyncio.sleep(e.value)
+                    s_msg = await msg.copy(
                         m.chat.id,
                         caption=caption,
                         parse_mode=ParseMode.HTML,
-                        protect_content=kon,
+                        protect_content=protect_on,
                         reply_markup=None,
                     )
+                    if s_msg:
+                        sent_ids.append(s_msg.id)
                 except BaseException:
                     pass
         elif len(argument) == 2:
@@ -175,13 +192,37 @@ async def start_bot(c, m):
                 return
             caption = mes.caption.html if mes.caption else ""
             await temp_msg.delete()
-            await mes.copy(
-                m.chat.id,
-                caption=caption,
-                parse_mode=ParseMode.HTML,
-                protect_content=kon,
-                reply_markup=None,
+            try:
+                s_msg = await mes.copy(
+                    m.chat.id,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    protect_content=protect_on,
+                    reply_markup=None,
+                )
+                if s_msg:
+                    sent_ids.append(s_msg.id)
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                s_msg = await mes.copy(
+                    m.chat.id,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    protect_content=protect_on,
+                    reply_markup=None,
+                )
+                if s_msg:
+                    sent_ids.append(s_msg.id)
+
+        # Kirim notifikasi warning auto-delete & daftarkan ke queue auto-delete 10 menit
+        if sent_ids:
+            warn_msg = await m.reply(
+                "⏳ **PENTING:** Demi keamanan server, file ini akan terhapus otomatis dalam **10 menit**.\n"
+                "Segera tonton/simpan sekarang!"
             )
+            if warn_msg:
+                sent_ids.append(warn_msg.id)
+            await add_auto_delete(bot_id=c.me.id, chat_id=m.chat.id, message_ids=sent_ids, delete_after_seconds=600)
 
     else:
         buttons = await button_pas_pertama(c)
@@ -194,12 +235,14 @@ async def start_bot(c, m):
 @bot.on_message(filters.command("start") & filters.private)
 async def start_bots(c, m):
     if c.me.id == BOT_ID:
-        await add_user(c.me.id, m.from_user.id)
-        await m.reply(
+        try:
+            await add_user(c.me.id, m.from_user.id)
+        except Exception:
+            pass
+        return await m.reply(
             start_msg.format(m.from_user.mention, c.me.mention),
-            reply_markup=InlineKeyboardMarkup(buttons),
+            reply_markup=InlineKeyboardMarkup(buttons2),
         )
-        return
     av = await timer_info(c.me.id)
     time = datetime.now().strftime("%d-%m-%Y")
     if av == time:
@@ -259,7 +302,7 @@ async def cek_id(c, m):
             caption="Silahkan kombinasikan dengan link tautan\ncontoh : /id https://t.me/AyiinChats\natau\n/id https://t.me/c/728292989/77",
         )
     link = m.command[1]
-    if not "t.me" in link:
+    if "t.me" not in link:
         return await m.reply("Maaf link salah")
     if "t.me/c" in link:
         try:
@@ -332,7 +375,7 @@ async def up_bokep(c, m):
     iya = await m.copy(dbc)
     sagne = iya.id * abs(dbc)
     string = f"get-{sagne}"
-    base64_string = await encode(string)
+    base64_string = encode(string)
     link = f"https://t.me/{c.me.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup(
         [
@@ -372,13 +415,13 @@ async def helper_text(c, m):
     if m.from_user.id == owner:
         await c.send_message(
             m.chat.id,
-            f"**Perintah Yang Tersedia**\n\n/info - Untuk melihat masa aktif bot anda\n/setdb - Untuk set channel base\n/addadmin - Untuk menambahkan admin bot\n/deladmin - Untuk menghapus admin bot\n/listadmin - Untuk menampilkan admin\n/users - Untuk cek pengunjung bot\n/broadcast - Untuk kirim pesan broadcast ke pengunjung bot\n/batch - Untuk membuat link lebih dari satu file\n/genlink - buat tautan untuk satu posting\n/protect - True untuk Protect False untuk Off\n/addbutton - Untuk menambahkan sub\n/delbutton - Untuk menghapus sub\n/listbutton - Untuk cek daftar fsub"
+            "**Perintah Yang Tersedia**\n\n/info - Untuk melihat masa aktif bot anda\n/setdb - Untuk set channel base\n/addadmin - Untuk menambahkan admin bot\n/deladmin - Untuk menghapus admin bot\n/listadmin - Untuk menampilkan admin\n/users - Untuk cek pengunjung bot\n/broadcast - Untuk kirim pesan broadcast ke pengunjung bot\n/batch - Untuk membuat link lebih dari satu file\n/genlink - buat tautan untuk satu posting\n/protect - True untuk Protect False untuk Off\n/addbutton - Untuk menambahkan sub\n/delbutton - Untuk menghapus sub\n/listbutton - Untuk cek daftar fsub"
         )
 
     elif adm:
         await c.send_message(
             m.chat.id,
-            f"**Perintah Yang Tersedia**\n\n/info - Untuk melihat masa aktif bot anda\n/users - Untuk cek pengunjung bot\n/broadcast - Untuk kirim pesan broadcast ke pengunjung bot\n/batch - Untuk membuat link lebih dari satu file\n/genlink - buat tautan untuk satu posting\n/protect - True untuk protect False untuk off"
+            "**Perintah Yang Tersedia**\n\n/info - Untuk melihat masa aktif bot anda\n/users - Untuk cek pengunjung bot\n/broadcast - Untuk kirim pesan broadcast ke pengunjung bot\n/batch - Untuk membuat link lebih dari satu file\n/genlink - buat tautan untuk satu posting\n/protect - True untuk protect False untuk off"
         )
 
 
@@ -423,7 +466,7 @@ async def post_channel(c, m):
         return
     converted_id = m.id * abs(dbc)
     string = f"get-{converted_id}"
-    base64_string = await encode(string)
+    base64_string = encode(string)
     link = f"https://t.me/{c.me.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup(
         [
@@ -473,7 +516,7 @@ async def ya_setting_bot(c, m):
         await c.export_chat_invite_link(ids)
         await add_owner(int(c.me.id), int(m.from_user.id), ids)
         await m.reply(f"Channel database berhasil di set `{ids}`")
-    except:
+    except Exception:
         return await m.reply(f"Maaf saya bukan admin di `{ids}`")
 
 
@@ -577,7 +620,7 @@ async def status_mem(c, m):
 @bot.on_message(filters.command("ping"))
 async def ping_pong(c, m):
     start = time()
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
     uptime_sec = (current_time - START_TIME).total_seconds()
     uptime = await _human_time_duration(int(uptime_sec))
     m_reply = await m.reply("Pinging...")
@@ -591,7 +634,7 @@ async def ping_pong(c, m):
 
 @bot.on_message(filters.command("uptime"))
 async def get_uptime(client, m: Message):
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
     uptime_sec = (current_time - START_TIME).total_seconds()
     uptime = await _human_time_duration(int(uptime_sec))
     await m.reply_text(
@@ -603,6 +646,24 @@ async def get_uptime(client, m: Message):
 
 @bot.on_message(filters.command("limitbutton"))
 async def add_max_bot(c, m):
+    pass
+
+
+# ─── Task 4.2: Guided Onboarding /setup Wizard ───────────────────────────────
+
+@bot.on_message(filters.command("setup") & filters.private)
+async def setup_wizard_handler(c, m: Message):
+    """Wizard Onboarding interaktif step-by-step untuk deploy sub-bot baru."""
+    wizard_text = (
+        "🧭 **Panduan Onboarding Sub-Bot (Wizard Setup):**\n\n"
+        "1️⃣ **Langkah 1:** Dapatkan Bot Token dari @BotFather.\n"
+        "2️⃣ **Langkah 2:** Buat Channel Telegram baru untuk simpanan database file.\n"
+        "3️⃣ **Langkah 3:** Tambahkan bot kamu sebagai **Admin** di Channel Database tersebut.\n"
+        "4️⃣ **Langkah 4:** Kirim perintah `/deploy` di bot master ini.\n"
+        "5️⃣ **Langkah 5:** Selesai! Bot kamu siap melayani pengguna dengan fitur DRM & Auto-Delete 10 menit.\n\n"
+        "💡 *Butuh bantuan? Hubungi admin / live chat.*"
+    )
+    await m.reply(wizard_text)
     if len(m.command) < 3:
         return await m.reply(
             "Gunakan Format /limitbutton 20731464 2"
@@ -620,7 +681,6 @@ async def add_max_bot(c, m):
 
 @bot.on_message(filters.command("user") & filters.user(KITA))
 async def user(client, message):
-    user_id = message.from_user.id
     count = 0
     user = ""
     for X in bot._bot:
@@ -631,7 +691,7 @@ async def user(client, message):
  ├ AKUN: {X.me.username}
  ╰ ID: <code>{X.me.id}</code>
 """
-        except:
+        except Exception:
             pass
     if len(str(user)) > 4096:
         with BytesIO(str.encode(str(user))) as out_file:

@@ -2,18 +2,18 @@
 
 import sys
 import traceback
-import asyncio
-import os
+import asyncio  # noqa: F401 — tersedia di eval() scope
+import os  # noqa: F401 — tersedia di eval() scope
 import subprocess
-import time
+import time  # noqa: F401 — tersedia di eval() scope
 from io import BytesIO, StringIO
 from os import execvp
 from sys import executable
-from subprocess import Popen, PIPE, TimeoutExpired
+from subprocess import Popen, PIPE, TimeoutExpired  # noqa: F401 — tersedia di eval() scope
 
-from pyrogram import filters
+from hydrogram import filters
 
-from Kymang import bot, KITA
+from Kymang import bot
 from Kymang.config import ADMINS
 
 
@@ -43,7 +43,7 @@ async def _(_, message):
         await message.reply_text(f"```{out}```")
     except Exception as e:
         return await message.reply_text(str(e))
-    m = await message.reply_text("**Updated with default branch, restarting now.**")
+    await message.reply_text("**Updated with default branch, restarting now.**")
     await restart()
 
 

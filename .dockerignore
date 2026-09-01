@@ -1,0 +1,10 @@
+.env
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.session
+*.session-journal
+*.key
+venv/
+env/

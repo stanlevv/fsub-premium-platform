@@ -3,8 +3,8 @@
 from glob import glob
 from os.path import basename, dirname, isfile
 
-from Kymang import *
-from Kymang.config import *
+from Kymang import *  # noqa: F401, F403
+from Kymang.config import *  # noqa: F401, F403
 
 
 def loadModule():

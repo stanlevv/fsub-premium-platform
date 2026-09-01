@@ -5,16 +5,17 @@ import importlib
 import logging
 import os
 from datetime import datetime, timedelta
-from pykeyboard import InlineKeyboard
-from pyrogram import Client, filters
-from pyrogram.types import *
+
+from hydrogram import Client, filters
+from hydrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from Kymang import Bot, bot
-from Kymang.config import *
+from Kymang.config import BOT_ID, LOG_GRP, MEMBER
 from Kymang.modules import loadModule
-from Kymang.modules.btn import *
-from Kymang.modules.data import *
-from Kymang.modules.func import *
+from Kymang.modules.btn import button_pas_pertama
+from Kymang.modules.data import (
+    add_admin, add_bot, add_owner, add_sub, add_timer, cek_owner, cek_prem, cek_seller
+)
 
 
 from .start import (
@@ -215,7 +216,7 @@ async def _(c, callback_query: CallbackQuery):
         return await c.send_message(user_id, f"**ERROR**:\n{e}")
     channel_id = await c.ask(
         user_id,
-        "**Masukan ID Channel Untuk Database,\n\Pastikan Bot sudah menjadi admin di Channel Database\nContoh -100xxxx**",
+        "**Masukan ID Channel Untuk Database,\n\\Pastikan Bot sudah menjadi admin di Channel Database\nContoh -100xxxx**",
         filters=filters.text,
     )
     if await cancel(callback_query, channel_id.text):

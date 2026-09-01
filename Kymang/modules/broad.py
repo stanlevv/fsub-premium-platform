@@ -2,23 +2,34 @@
 
 import asyncio
 
-from pyrogram import filters, Client
-from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, UserDeactivatedBan
+from hydrogram import filters, Client
+from hydrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, UserDeactivatedBan
 
 from Kymang import bot
-from Kymang.config import *
-from Kymang.modules.data import *
+from Kymang.config import ADMINS, BOT_ID
+from Kymang.modules.data import (
+    add_admin, add_protect, add_seller, add_sub, admin_info, cek_admin,
+    cek_owner, del_admin, del_seller, del_sub, del_user, get_subs,
+    get_user, max_info, seller_info, sub_info
+)
+
+
+async def is_authorized(c, m) -> bool:
+    if c.me.id == BOT_ID:
+        return False
+    cek = await cek_owner(c.me.id)
+    if not cek:
+        return False
+    owner = cek[0]["owner"]
+    if m.from_user.id == owner:
+        return True
+    adm = await admin_info(c.me.id, m.from_user.id)
+    return bool(adm)
 
 
 @bot.on_message(filters.command("users"))
 async def get_users(c, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
+    if not await is_authorized(c, m):
         return
     msg = await c.send_message(m.chat.id, "**Tunggu Sebentar...**")
     users = await get_user(c.me.id)
@@ -26,7 +37,7 @@ async def get_users(c, m):
 
 
 @bot.on_message(filters.command("buser") & filters.user(ADMINS))
-async def get_users(c, m):
+async def get_buser(c, m):
     if c.me.id != BOT_ID:
         return
     msg = await c.send_message(m.chat.id, "Tunggu Sebentar...")
@@ -34,26 +45,17 @@ async def get_users(c, m):
     await msg.edit(f"{len(users)} user")
 
 
-@bot.on_message(filters.command("broadcast"))
-async def send_text(c: Client, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
-        return
+async def _do_broadcast(c, m, query, pls_wait_text, reply_text):
     if not (reply := m.reply_to_message):
-        return await m.reply("`/broadcast [Reply ke pesan]`")
-    query = await get_user(c.me.id)
+        return await m.reply(reply_text)
+    
     total = 0
     successful = 0
     blocked = 0
     deleted = 0
     unsuccessful = 0
 
-    pls_wait = await m.reply("Tunggu Sebentar...")
+    pls_wait = await m.reply(pls_wait_text)
     for x in query:
         chat_id = x["user"]
         try:
@@ -82,61 +84,27 @@ Akun Dihapus: {deleted}
 Total Pengguna: {total}**"""
 
     return await pls_wait.edit(status)
+
+
+@bot.on_message(filters.command("broadcast"))
+async def send_text(c: Client, m):
+    if not await is_authorized(c, m):
+        return
+    query = await get_user(c.me.id)
+    await _do_broadcast(c, m, query, "Tunggu Sebentar...", "`/broadcast [Reply ke pesan]`")
 
 
 @bot.on_message(filters.private & filters.command("bacot") & filters.user(ADMINS))
-async def send_text(c, m):
+async def send_text_master(c, m):
     if c.me.id != BOT_ID:
         return
-    if not (reply := m.reply_to_message):
-        return await m.reply("Reply Goblok")
     query = await get_user(c.me.id)
-    total = 0
-    successful = 0
-    blocked = 0
-    deleted = 0
-    unsuccessful = 0
-
-    pls_wait = await m.reply("SABAR NGENTOT")
-    for x in query:
-        chat_id = x["user"]
-        try:
-            await reply.copy(chat_id)
-            successful += 1
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-            await reply.copy(chat_id)
-            successful += 1
-        except UserIsBlocked:
-            await del_user(c.me.id, chat_id)
-            blocked += 1
-        except (UserDeactivatedBan, InputUserDeactivated):
-            await del_user(c.me.id, chat_id)
-            deleted += 1
-        except:
-            unsuccessful += 1
-        total += 1
-
-    status = f"""**Berhasil Mengirim pesan ke:
-
-Berhasil: {successful}
-Gagal: {unsuccessful}
-Pengguna Diblokir: {blocked}
-Akun Dihapus: {deleted}
-Total Pengguna: {total}**"""
-
-    return await pls_wait.edit(status)
+    await _do_broadcast(c, m, query, "SABAR NGENTOT", "Reply Goblok")
 
 
 @bot.on_message(filters.command("addadmin"))
 async def add_admin_bot(c, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
+    if not await is_authorized(c, m):
         return
     if len(m.command) < 2:
         return await m.reply(
@@ -227,13 +195,7 @@ async def del_seller_sub(c, m):
 
 @bot.on_message(filters.private & filters.command("protect"))
 async def set_protect(c, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
+    if not await is_authorized(c, m):
         return
     if len(m.command) < 2:
         return await m.reply(
@@ -249,13 +211,7 @@ async def set_protect(c, m):
 
 @bot.on_message(filters.command("addbutton"))
 async def add_sub_bot(c, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
+    if not await is_authorized(c, m):
         return
     if len(m.command) < 2:
         return await m.reply(
@@ -263,7 +219,6 @@ async def add_sub_bot(c, m):
         )
     ids = int(m.command[1])
     adm = await sub_info(c.me.id, ids)
-    x = await get_subs(c.me.id)
     s = await max_info(c.me.id)
     if len(m.command) == s:
         return await m.reply(f"Batas fsub {s} telah tercapai, Silahkan Hubungi Admin untuk bantuan.")
@@ -272,7 +227,7 @@ async def add_sub_bot(c, m):
             await c.export_chat_invite_link(ids)
             await add_sub(int(c.me.id), ids)
             await m.reply(f"{ids} Berhasil ditambahkan di Fsub")
-        except:
+        except Exception:
             return await m.reply(f"Maaf saya bukan admin di `{ids}`")
     else:
         await m.reply(f"{adm} Sudah menjadi admin di Fsub `{ids}`")
@@ -280,13 +235,7 @@ async def add_sub_bot(c, m):
 
 @bot.on_message(filters.command("delbutton"))
 async def del_sub_bot(c, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
+    if not await is_authorized(c, m):
         return
     if len(m.command) < 2:
         return await m.reply(
@@ -303,13 +252,7 @@ async def del_sub_bot(c, m):
 
 @bot.on_message(filters.command("listbutton"))
 async def cek_sub_bot(c, m):
-    if c.me.id == BOT_ID:
-        return
-    cek = await cek_owner(c.me.id)
-    adm = await admin_info(c.me.id, m.from_user.id)
-    for i in cek:
-        owner = i["owner"]
-    if not adm and m.from_user.id != owner:
+    if not await is_authorized(c, m):
         return
     msg = "**List Fsub / Button**\n\n"
     admins = await get_subs(c.me.id)
